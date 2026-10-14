@@ -61,7 +61,7 @@ th,td{padding:9px 6px;border-bottom:1px solid var(--bd);text-align:left;font-siz
   <div class="tabs">
     <button class="on" data-t="materi">📖 Materi</button>
     <button data-t="kuis">📝 Kuis</button>
-    <button data-t="riwayat">🏆 Nilai</button>
+    <button data-t="riwayat" id="tabNilai">🏆 Nilai</button>
   </div>
 
   <section id="materi" class="sec on">
@@ -127,9 +127,9 @@ SELESAI</pre>
 
   <section id="riwayat" class="sec">
     <div class="card">
-      <h2>Riwayat Nilai</h2>
+      <h2>Daftar Nilai Seluruh Siswa</h2>
       <div class="wrap" id="tabel"></div>
-      <div class="row" style="margin-top:12px"><button class="btn g" id="hapus">Hapus Riwayat</button></div>
+      <div class="row" style="margin-top:12px"><button class="btn g" id="btnRefresh">🔄 Refresh Data Nilai</button></div>
     </div>
   </section>
 </main>
@@ -157,17 +157,27 @@ const Q=[
 ["Algoritma yang menyusun kartu dari angka terkecil ke terbesar termasuk algoritma...",["Pencarian","Enkripsi","Pengurutan","Kompresi","Rendering"],2],
 ["Contoh penerapan berpikir komputasional dalam kehidupan sehari-hari adalah...",["Menghafal rute secara acak","Menunggu bantuan tanpa berusaha","Mengandalkan firasat semata","Menghindari masalah","Menyusun langkah mencari rute tercepat dengan aturan yang jelas"],4]
 ];
+
 const L="abcde",KEY="bk10_state";
-// === GANTI dengan URL Web App Apps Script kamu (berakhiran /exec) ===
-const SCRIPT_URL="PASTE_URL_APPS_SCRIPT_DI_SINI";
+
+// ⚠️ GANTI TEKS DI BAWAH INI DENGAN URL APPS SCRIPT ANDA (BERAKHIRAN /exec)
+const SCRIPT_URL="https://script.google.com/macros/s/AKfycbwwQ59mMeXUd0Aug0gEkWOPCuzAjNkzhFio6w7_xvX4pOOFoaIq0VXs4bis5Nic9WnTDg/exec";
+
 let S={nama:"",jwb:Array(20).fill(null),done:false,hasil:null,riwayat:[]};
 try{const r=localStorage.getItem(KEY);if(r){const p=JSON.parse(r);if(p&&Array.isArray(p.jwb))S=Object.assign(S,p)}}catch(e){}
 const $=id=>document.getElementById(id);
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
-function tab(t){document.querySelectorAll('.sec').forEach(s=>s.classList.toggle('on',s.id===t));
- document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));scrollTo({top:0,behavior:'smooth'})}
+
+function tab(t){
+  document.querySelectorAll('.sec').forEach(s=>s.classList.toggle('on',s.id===t));
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  scrollTo({top:0,behavior:'smooth'});
+  if(t==='riwayat') muatSeluruhNilai();
+}
+
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>tab(b.dataset.t));
 $('goKuis').onclick=()=>tab('kuis');
+
 function renderSoal(){
  $('soal').innerHTML=Q.map((q,i)=>`<div class="q ${S.done?'locked':''}"><p>${i+1}. ${q[0]}</p>`+q[1].map((o,j)=>{
   let c='o';if(S.jwb[i]===j)c+=' sel';
@@ -177,44 +187,78 @@ function renderSoal(){
  $('kirim').style.display=S.done?'none':'';
  $('prog').style.display=S.done?'none':'';
 }
+
 function prog(){const n=S.jwb.filter(x=>x!==null).length;$('progTx').textContent=n+"/20 terjawab";$('progBar').style.width=n*5+"%"}
+
 function renderHasil(){
  if(!S.done||!S.hasil){$('hasil').innerHTML='';return}
  const h=S.hasil,m=h.nilai>=90?"Luar biasa! 🎉":h.nilai>=75?"Bagus, pertahankan! 👏":h.nilai>=60?"Cukup baik, baca materi lagi ya 📖":"Ayo belajar lagi, kamu pasti bisa! 💪";
  $('hasil').innerHTML=`<div class="card score"><div class="muted">Hasil untuk <b>${esc(h.nama)}</b></div><div class="n">${h.nilai}</div><div>Benar ${h.benar} dari 20 soal</div><p>${m}</p><p class="muted" style="font-size:.88rem">Pembahasan: hijau = jawaban benar, merah = jawabanmu yang salah.</p><p id="stat" style="font-weight:600">${S.terkirim?'✅ Nilai terkirim ke guru.':'⚠️ Nilai belum terkirim ke guru.'}</p>${S.terkirim?'':'<button class="btn g" id="kirimUlang">Kirim Ulang</button>'}</div>`;
  const kb=$('kirimUlang');if(kb)kb.onclick=kirimNilai;
 }
+
 function setStat(t){const e=$('stat');if(e)e.textContent=t}
+
 async function kirimNilai(){
  const h=S.hasil;if(!h)return;
  if(!SCRIPT_URL.startsWith("https://script.google.com/")){setStat("⚠️ URL Apps Script belum diisi di file HTML.");return}
- setStat("⏳ Mengirim nilai ke guru...");
+ setStat("⏳ Mengirim nilai ke database...");
  try{
-  await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({nama:h.nama,nilai:h.nilai,benar:h.benar})});
+  await fetch(SCRIPT_URL,{
+    method:'POST',
+    mode:'no-cors',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({action:"simpan",nama:h.nama,nilai:h.nilai,benar:h.benar})
+  });
   S.terkirim=true;save();renderHasil();
+  muatSeluruhNilai();
  }catch(e){setStat("⚠️ Gagal terkirim. Cek internet lalu tekan Kirim Ulang.")}
 }
-function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
-function renderTabel(){
- const r=S.riwayat;
- $('tabel').innerHTML=r.length?`<table><tr><th>#</th><th>Nama</th><th>Nilai</th><th>Benar</th><th>Waktu</th></tr>`+r.slice().reverse().map((x,i)=>`<tr><td>${r.length-i}</td><td>${esc(x.nama)}</td><td><b>${x.nilai}</b></td><td>${x.benar}/20</td><td>${esc(x.waktu)}</td></tr>`).join('')+`</table>`:'<p class="muted">Belum ada nilai. Kerjakan kuis dulu ya!</p>';
+
+async function muatSeluruhNilai(){
+ const container=$('tabel');
+ if(!SCRIPT_URL.startsWith("https://script.google.com/")){
+   container.innerHTML='<p class="muted">⚠️ URL Apps Script belum diisi pada file HTML.</p>';
+   return;
+ }
+ container.innerHTML='<p class="muted">⏳ Memuat data nilai seluruh siswa dari Google Sheets...</p>';
+ try{
+  const res=await fetch(SCRIPT_URL+"?action=getNilai");
+  const data=await res.json();
+  if(!data||data.length===0){
+    container.innerHTML='<p class="muted">Belum ada nilai siswa yang tersimpan.</p>';
+    return;
+  }
+  let html=`<table><tr><th>#</th><th>Nama Siswa</th><th>Nilai</th><th>Benar</th><th>Waktu</th></tr>`;
+  data.reverse().forEach((x,i)=>{
+    html+=`<tr><td>${i+1}</td><td><b>${esc(x.nama)}</b></td><td><b style="color:var(--pri)">${x.nilai}</b></td><td>${esc(x.benar)}</td><td>${esc(x.waktu)}</td></tr>`;
+  });
+  html+=`</table>`;
+  container.innerHTML=html;
+ }catch(e){
+  container.innerHTML='<p class="muted">⚠️ Gagal memuat data nilai. Pastikan koneksi internet lancar.</p>';
+ }
 }
+
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
 $('nama').value=S.nama||"";
-$('nama').oninput=e=>{S.nama=e.target.value;save()};
-$('kirim').onclick=()=>{
+$('nama').oninput=e=>{S.nama=e.target.value;save()};$('kirim').onclick=()=>{
  const nama=S.nama.trim();
  if(!nama){alert("Isi nama terlebih dahulu.");$('nama').focus();return}
  const k=S.jwb.filter(x=>x===null).length;
  if(k&&!confirm(k+" soal belum dijawab. Tetap kirim?"))return;
  const benar=Q.reduce((a,q,i)=>a+(S.jwb[i]===q[2]?1:0),0);
  const w=new Date().toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'});
- S.hasil={nama,benar,nilai:benar*5,waktu:w};S.riwayat.push(S.hasil);S.done=true;S.terkirim=false;save();
- renderSoal();renderHasil();renderTabel();scrollTo({top:0,behavior:'smooth'});kirimNilai();
+ S.hasil={nama,benar,nilai:benar*5,waktu:w};S.done=true;S.terkirim=false;save();
+ renderSoal();renderHasil();scrollTo({top:0,behavior:'smooth'});kirimNilai();
 };
+
 $('reset').onclick=()=>{if(!S.done&&S.jwb.some(x=>x!==null)&&!confirm("Hapus semua jawaban dan mulai ulang?"))return;
  S.jwb=Array(20).fill(null);S.done=false;S.hasil=null;save();renderSoal();renderHasil();prog()};
-$('hapus').onclick=()=>{if(confirm("Hapus seluruh riwayat nilai?")){S.riwayat=[];save();renderTabel()}};
-renderSoal();renderHasil();renderTabel();prog();
+$('btnRefresh').onclick=muatSeluruhNilai;
+
+renderSoal();renderHasil();prog();
 </script>
 </body>
 </html>
